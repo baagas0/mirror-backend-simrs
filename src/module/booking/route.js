@@ -1,0 +1,16 @@
+const Controller = require('./controller')
+const router = require('express').Router()
+const authentification = require('../../middleware/authentification')
+const upload = require('../../helper/upload')
+
+router.post('/registerDenganRM', authentification, upload, Controller.registerDenganRM)
+router.post('/registerTanpaRM', authentification, Controller.registerTanpaRM)
+router.post('/update', Controller.update)
+router.post('/list', authentification, Controller.list)
+router.post('/listBookingByUserId', Controller.listBookingByUserId)
+router.get('/detailsBookingByKodeBooking/:kode_booking', Controller.detailsBookingByKodeBooking)
+router.post('/listAllBooking', Controller.listAllBooking)
+router.post('/listBookingByTujuanBooking', Controller.listBookingByTujuanBooking)
+router.get('/qr', Controller.qr)
+
+module.exports = router
