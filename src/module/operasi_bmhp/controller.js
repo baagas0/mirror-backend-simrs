@@ -165,11 +165,11 @@ class Controller {
                 where ob."deletedAt" isnull and ob.id = '${id}'
             `, s);
 
-            if(operasiBmhpData.length == 0){
+            if (operasiBmhpData.length == 0) {
                 return res.status(404).json({ status: 404, message: "operasi_bmhp tidak ditemukan" })
             }
 
-            if(operasiBmhpData[0].status === 'confirmed'){
+            if (operasiBmhpData[0].status === 'confirmed') {
                 return res.status(201).json({ status: 204, message: "operasi_bmhp sudah confirmed" })
             }
 
@@ -187,7 +187,7 @@ class Controller {
                 `, { ...s, transaction: t });
 
                 let penjualanId;
-                if(existingPenjualan.length > 0){
+                if (existingPenjualan.length > 0) {
                     penjualanId = existingPenjualan[0].id;
                 } else {
                     let newPenjualan = await penjualan.create({
@@ -199,6 +199,7 @@ class Controller {
                         harga_total_barang: 0,
                         harga_total_jasa: 0,
                         harga_total_fasilitas: 0,
+                        harga_total_bmhp: 0,
                         discount: 0,
                         tax: 0,
                         total_penjualan: 0
@@ -218,6 +219,19 @@ class Controller {
                     keterangan: operasiBmhpData[0].keterangan,
                     status_penjualan_bmhp: 1
                 }, { transaction: t });
+
+                // Hitung total semua penjualan_bmhp untuk penjualan ini
+                let totalBmhp = await sq.query(`
+                    select COALESCE(sum(total_harga), 0) as total_bmhp 
+                    from penjualan_bmhp 
+                    where "deletedAt" isnull and penjualan_id = '${penjualanId}'
+                `, { ...s, transaction: t });
+
+                // Update total penjualan dengan total BMHP
+                let totalBmhpValue = parseFloat(totalBmhp[0].total_bmhp) || 0;
+                await penjualan.update({
+                    harga_total_bmhp: totalBmhpValue,
+                }, { where: { id: penjualanId }, transaction: t });
             });
 
             res.status(200).json({ status: 200, message: "sukses, operasi_bmhp confirmed dan penjualan_bmhp telah dibuat" })

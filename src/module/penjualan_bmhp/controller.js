@@ -42,6 +42,19 @@ class Controller {
                                     keterangan: keterangan || cekOperasiBmhp[0].keterangan,
                                     status_penjualan_bmhp: status_penjualan_bmhp || 1
                                 },{transaction:t});
+
+                                // Hitung ulang total penjualan
+                                let totalBmhp = await sq.query(`
+                                    select COALESCE(sum(total_harga), 0) as total_bmhp 
+                                    from penjualan_bmhp 
+                                    where "deletedAt" isnull and penjualan_id = '${penjualan_id}'
+                                `, { ...s, transaction: t });
+
+                                let totalBmhpValue = parseFloat(totalBmhp[0].total_bmhp) || 0;
+                                await penjualan.update({
+                                    harga_total_bmhp: totalBmhpValue,
+                                    total_penjualan: totalBmhpValue
+                                }, { where: { id: penjualan_id }, transaction: t });
                                 
                                 return data
                             })
@@ -78,6 +91,19 @@ class Controller {
                             keterangan, 
                             status_penjualan_bmhp 
                         }, { where: { id },transaction:t })
+
+                        // Hitung ulang total penjualan
+                        let totalBmhp = await sq.query(`
+                            select COALESCE(sum(total_harga), 0) as total_bmhp 
+                            from penjualan_bmhp 
+                            where "deletedAt" isnull and penjualan_id = '${dataBmhp[0].penjualan_id}'
+                        `, { ...s, transaction: t });
+
+                        let totalBmhpValue = parseFloat(totalBmhp[0].total_bmhp) || 0;
+                        await penjualan.update({
+                            harga_total_bmhp: totalBmhpValue,
+                            total_penjualan: totalBmhpValue
+                        }, { where: { id: dataBmhp[0].penjualan_id }, transaction: t });
                     })
 
                     res.status(200).json({ status: 200, message: "sukses" });
@@ -104,6 +130,19 @@ class Controller {
                 }else{
                     await sq.transaction(async t =>{
                         await penjualanBmhp.destroy({ where: {id},transaction:t })
+
+                        // Hitung ulang total penjualan setelah delete
+                        let totalBmhp = await sq.query(`
+                            select COALESCE(sum(total_harga), 0) as total_bmhp 
+                            from penjualan_bmhp 
+                            where "deletedAt" isnull and penjualan_id = '${dataBmhp[0].penjualan_id}'
+                        `, { ...s, transaction: t });
+
+                        let totalBmhpValue = parseFloat(totalBmhp[0].total_bmhp) || 0;
+                        await penjualan.update({
+                            harga_total_bmhp: totalBmhpValue,
+                            total_penjualan: totalBmhpValue
+                        }, { where: { id: dataBmhp[0].penjualan_id }, transaction: t });
                     })
 
                     res.status(200).json({ status: 200, message: "sukses" });
@@ -293,6 +332,19 @@ class Controller {
                 keterangan: operasiBmhpData[0].keterangan,
                 status_penjualan_bmhp: 1
             });
+
+            // Hitung ulang total penjualan
+            let totalBmhp = await sq.query(`
+                select COALESCE(sum(total_harga), 0) as total_bmhp 
+                from penjualan_bmhp 
+                where "deletedAt" isnull and penjualan_id = '${finalPenjualanId}'
+            `, s);
+
+            let totalBmhpValue = parseFloat(totalBmhp[0].total_bmhp) || 0;
+            await penjualan.update({
+                harga_total_bmhp: totalBmhpValue,
+                total_penjualan: totalBmhpValue
+            }, { where: { id: finalPenjualanId } });
 
             res.status(200).json({ status: 200, message: "sukses", data: hasil })
         } catch (err) {

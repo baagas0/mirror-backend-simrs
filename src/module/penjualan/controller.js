@@ -6,6 +6,7 @@ const penjualanExternal = require('../penjualan_external/model')
 const penjualanFasilitas = require('../penjualan_fasilitas/model')
 const penjualanJasa = require('../penjualan_jasa/model')
 const penjualanBarang = require('../penjualan_barang/model')
+const penjualanBmhp = require('../penjualan_bmhp/model')
 const penjualanPenunjang = require('../penjualan_penunjang/model')
 const stockBarang = require('../stock/model')
 const historyInv = require('../history_inventory/model')
@@ -137,6 +138,8 @@ class Controller {
                         await penjualan.destroy({where: { id },transaction:t})
                         await penjualanFasilitas.destroy({ where: { penjualan_id: id },transaction:t })
                         await penjualanJasa.destroy({ where: { penjualan_id: id },transaction:t })
+                        await penjualanPenunjang.destroy({ where: { penjualan_id: id },transaction:t })
+                        await penjualanBmhp.destroy({ where: { penjualan_id: id },transaction:t })
                         if(cekPenjualan[0].penjualan_external_id){
                             await penjualanExternal.destroy({where:{id:cekPenjualan[0].penjualan_external_id},transaction:t})
                         }
@@ -501,41 +504,42 @@ class Controller {
                             jsonb_agg(
                                 json_build_object(
                                     'id', PB.id,
-                                    'ms_barang_id', PB.ms_barang_id,
+                                    'operasi_bmhp_id', PB.operasi_bmhp_id,
+                                    'ms_barang_id', OB.ms_barang_id,
                                     'nama_barang', MB.nama_barang,
-                                    'harga_barang', PB.harga_barang,
-                                    'harga_barang_custom', PB.harga_barang_custom,
-                                    'harga_pokok_barang', PB.harga_pokok_barang,
-                                    'qty_barang', PB.qty_barang,
-                                    'total_harga_barang', (PB.qty_barang * PB.harga_barang)
+                                    'kode_produk', MB.kode_produk,
+                                    'qty', PB.qty,
+                                    'harga_satuan', PB.harga_satuan,
+                                    'total_harga', PB.total_harga,
+                                    'jenis', PB.jenis,
+                                    'keterangan', PB.keterangan,
+                                    'nama_satuan', MSB.nama_satuan
                                 ) 
                             ) 
-                        from penjualan_barang PB
-                            join ms_barang MB on MB.id = PB.ms_barang_id 
-                        where PB.penjualan_id = A.id
-                        order by min(PB."createdAt") asc
-                    ) as bulk_barang
+                        from penjualan_bmhp PB
+                        join operasi_bmhp OB on OB.id = PB.operasi_bmhp_id
+                        join ms_barang MB on MB.id = OB.ms_barang_id
+                        left join ms_satuan_barang MSB on MSB.id = OB.ms_satuan_barang_id
+                        where PB.penjualan_id = A.id and PB."deletedAt" isnull
+                        order by MB.nama_barang asc
+                    ) as bulk_bmhp
                 from penjualan A
-                join ms_gudang B on B.id = A.ms_gudang_id
-                join ms_asuransi C on C.id = A.ms_asuransi_id 
-                join kelas_kunjungan D on D.id = A.kelas_kunjungan_id 
+                left join ms_gudang B on B.id = A.ms_gudang_id
+                left join ms_asuransi C on C.id = A.ms_asuransi_id 
+                left join kelas_kunjungan D on D.id = A.kelas_kunjungan_id 
                 where A."deletedAt" is null and A.is_bmhp = true ${isi}
             `, s);
-
-            // data.bulk_barang = await sq.query(``, s)
-            // console.log(data)
             
-            // HANDLE bulk_barang = null
+            // HANDLE bulk_bmhp = null
             for (let i = 0; i < data.length; i++) {
                 const e = data[i];
-                // console.log(e)
-                if(!e.bulk_barang) data[i].bulk_barang = []
+                if(!e.bulk_bmhp) data[i].bulk_bmhp = []
             }
 
             res.status(200).json({ status: 200, message: "sukses", data });
         } catch (error) {
-            console.log(err);
-            res.status(500).json({ status: 500, message: "gagal", data: err });
+            console.log(error);
+            res.status(500).json({ status: 500, message: "gagal", data: error });
         }
     }
 
@@ -580,6 +584,16 @@ class Controller {
             join ms_jenis_obat mjo on mjo.id = mb.ms_jenis_obat_id
             join ms_satuan_barang msb on msb.id = mb.ms_satuan_barang_id
             where pb."deletedAt" isnull and pb.penjualan_id = '${id}' order by mb.nama_barang`,s);
+            let bmhp = await sq.query(`select pb.id as penjualan_bmhp_id, pb.*,
+            ob.ms_barang_id, ob.hasil_operasi_id,
+            mb.nama_barang, mb.kode_produk, 
+            msb.nama_satuan
+            from penjualan_bmhp pb 
+            join operasi_bmhp ob on ob.id = pb.operasi_bmhp_id
+            join ms_barang mb on mb.id = ob.ms_barang_id
+            left join ms_satuan_barang msb on msb.id = ob.ms_satuan_barang_id
+            where pb."deletedAt" isnull and pb.penjualan_id = '${id}' 
+            order by mb.nama_barang`,s);
             let pembayaran = await sq.query(`select pt.tipe_pembayaran_tagihan,pt.kartu_bank_pembayaran_tagihan,pt.kas_id,k.name as nama_kas
             from pembayaran_tagihan pt
             join kas k on k.id = pt.kas_id
@@ -597,6 +611,7 @@ class Controller {
                 data[0].fasilitas = fasilitas
                 data[0].jasa = jasa
                 data[0].barang = barang
+                data[0].bmhp = bmhp
                 data[0].penunjang = penunjang
             }
 
@@ -624,10 +639,12 @@ class Controller {
                                 await penjualanFasilitas.update({ status_penjualan_fasilitas: 1 }, { where: { penjualan_id: id }, transaction: t })
                                 await penjualanJasa.update({ status_penjualan_jasa: 1 }, { where: { penjualan_id: id }, transaction: t })
                                 await penjualanBarang.update({ status_penjualan_barang: 1 }, { where: { penjualan_id: id }, transaction: t })
+                                await penjualanBmhp.update({ status_penjualan_bmhp: 1 }, { where: { penjualan_id: id }, transaction: t })
                             } else if (status_penjualan == 2) {
                                 await penjualanFasilitas.update({ status_penjualan_fasilitas: 2 }, { where: { penjualan_id: id }, transaction: t })
                                 await penjualanJasa.update({ status_penjualan_jasa: 2 }, { where: { penjualan_id: id }, transaction: t })
                                 await penjualanBarang.update({ status_penjualan_barang: 2 }, { where: { penjualan_id: id }, transaction: t })
+                                await penjualanBmhp.update({ status_penjualan_bmhp: 2 }, { where: { penjualan_id: id }, transaction: t })
                             }
                             await penjualan.update({ status_penjualan }, { where: { id }, transaction: t })
                         })
