@@ -180,8 +180,6 @@ class Controller {
                     select id from penjualan 
                     where "deletedAt" isnull 
                     and registrasi_id = '${operasiBmhpData[0].registrasi_id}' 
-                    and is_bmhp = true 
-                    and status_penjualan = 1
                     order by "createdAt" desc
                     limit 1
                 `, { ...s, transaction: t });
