@@ -69,6 +69,7 @@ router.use("/penjualanBarang", require("./module/penjualan_barang/route"));
 router.use("/penjualanFasilitas", require("./module/penjualan_fasilitas/route"));
 router.use("/penjualanJasa", require("./module/penjualan_jasa/route"));
 router.use("/penjualanExternal", require("./module/penjualan_external/route"));
+router.use("/penjualanBmhp", require("./module/penjualan_bmhp/route"));
 router.use("/poolExternal", require("./module/pool_external/route"));
 router.use("/poolRegistrasi", require("./module/pool_registrasi/route"));
 router.use("/print", require("./module/print/route"));
