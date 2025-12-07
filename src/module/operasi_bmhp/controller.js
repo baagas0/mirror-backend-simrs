@@ -1,9 +1,12 @@
 const OperasiBmhp = require('./model');
-const penjualanBmhp = require('../penjualan_bmhp/model');
+const penjualanOperasi = require('../penjualan_operasi/model');
 const penjualan = require('../penjualan/model');
+const stockBarang = require('../stock/model');
+const historyInv = require('../history_inventory/model');
 const { sq } = require("../../config/connection");
 const { v4: uuid_v4 } = require("uuid");
 const { QueryTypes, Op } = require('sequelize');
+const {kurangiStock} = require('../../helper/stock_barang');
 const s = { type: QueryTypes.SELECT }
 
 class Controller {
@@ -158,7 +161,7 @@ class Controller {
 
         try {
             let operasiBmhpData = await sq.query(`
-                select ob.*, ho.jadwal_operasi_id, jo.registrasi_id
+                select ob.*, ho.jadwal_operasi_id, jo.registrasi_id, jo.ms_gudang_id
                 from operasi_bmhp ob
                 join hasil_operasi ho on ho.id = ob.hasil_operasi_id
                 join jadwal_operasi jo on jo.id = ho.jadwal_operasi_id
@@ -173,6 +176,15 @@ class Controller {
                 return res.status(201).json({ status: 204, message: "operasi_bmhp sudah confirmed" })
             }
 
+            // Get barang info
+            let barangInfo = await sq.query(`
+                select mb.*, mjo.nama_jenis_obat, msb.nama_satuan
+                from ms_barang mb
+                left join ms_jenis_obat mjo on mjo.id = mb.ms_jenis_obat_id
+                left join ms_satuan_barang msb on msb.id = mb.ms_satuan_barang_id
+                where mb.id = '${operasiBmhpData[0].ms_barang_id}'
+            `, s);
+
             await sq.transaction(async t => {
                 await OperasiBmhp.update({ status: 'confirmed' }, { where: { id }, transaction: t });
 
@@ -185,6 +197,8 @@ class Controller {
                 `, { ...s, transaction: t });
 
                 let penjualanId;
+                let ms_gudang_id = operasiBmhpData[0].ms_gudang_id;
+                
                 if (existingPenjualan.length > 0) {
                     penjualanId = existingPenjualan[0].id;
                 } else {
@@ -194,10 +208,11 @@ class Controller {
                         is_bmhp: true,
                         registrasi_id: operasiBmhpData[0].registrasi_id,
                         status_penjualan: 1,
+                        ms_gudang_id: ms_gudang_id,
                         harga_total_barang: 0,
                         harga_total_jasa: 0,
                         harga_total_fasilitas: 0,
-                        harga_total_bmhp: 0,
+                        harga_total_operasi: 0,
                         discount: 0,
                         tax: 0,
                         total_penjualan: 0
@@ -205,37 +220,59 @@ class Controller {
                     penjualanId = newPenjualan.id;
                 }
 
-                // Create penjualan_bmhp
-                await penjualanBmhp.create({
-                    id: uuid_v4(),
-                    operasi_bmhp_id: id,
+                // Kurangi stock
+                let bulk_barang = [{
+                    ms_barang_id: operasiBmhpData[0].ms_barang_id,
                     penjualan_id: penjualanId,
+                    qty_barang: operasiBmhpData[0].qty
+                }];
+                
+                let barang = await kurangiStock({
+                    ms_gudang_id,
+                    isi:`'${operasiBmhpData[0].ms_barang_id}'`,
+                    bulk_barang
+                });
+
+                if(barang.cekHasil.length > 0){
+                    throw new Error('Stock tidak cukup: ' + JSON.stringify(barang.cekHasil));
+                }
+
+                // Create penjualan_operasi dengan data lengkap (tidak bergantung relasi)
+                await penjualanOperasi.create({
+                    id: uuid_v4(),
+                    penjualan_id: penjualanId,
+                    ms_barang_id: operasiBmhpData[0].ms_barang_id,
                     qty: operasiBmhpData[0].qty,
                     harga_satuan: operasiBmhpData[0].harga_satuan,
-                    total_harga: operasiBmhpData[0].total_harga,
+                    harga_satuan_custom: operasiBmhpData[0].harga_satuan,
+                    harga_pokok: barangInfo.length > 0 ? barangInfo[0].harga_pokok : 0,
                     jenis: operasiBmhpData[0].jenis,
                     keterangan: operasiBmhpData[0].keterangan,
-                    status_penjualan_bmhp: 1
+                    status_penjualan_operasi: 1
                 }, { transaction: t });
 
-                // Hitung total semua penjualan_bmhp untuk penjualan ini
-                let totalBmhp = await sq.query(`
-                    select COALESCE(sum(total_harga), 0) as total_bmhp 
-                    from penjualan_bmhp 
+                // Update stock dan history
+                await stockBarang.bulkCreate(barang.stock,{updateOnDuplicate:['qty'],transaction:t})
+                await historyInv.bulkCreate(barang.hisInv,{transaction:t})
+
+                // Hitung total semua penjualan_operasi untuk penjualan ini
+                let totalOperasi = await sq.query(`
+                    select COALESCE(sum(qty * harga_satuan), 0) as total_operasi 
+                    from penjualan_operasi 
                     where "deletedAt" isnull and penjualan_id = '${penjualanId}'
                 `, { ...s, transaction: t });
 
-                // Update total penjualan dengan total BMHP
-                let totalBmhpValue = parseFloat(totalBmhp[0].total_bmhp) || 0;
+                // Update total penjualan
+                let totalOperasiValue = parseFloat(totalOperasi[0].total_operasi) || 0;
                 await penjualan.update({
-                    harga_total_bmhp: totalBmhpValue,
+                    harga_total_operasi: totalOperasiValue,
                 }, { where: { id: penjualanId }, transaction: t });
             });
 
-            res.status(200).json({ status: 200, message: "sukses, operasi_bmhp confirmed dan penjualan_bmhp telah dibuat" })
+            res.status(200).json({ status: 200, message: "sukses, operasi_bmhp confirmed dan penjualan_operasi telah dibuat" })
         } catch (error) {
             console.log(error);
-            res.status(500).json({ status: 500, message: "gagal", data: error })
+            res.status(500).json({ status: 500, message: "gagal", data: error.message || error })
         }
     }
 

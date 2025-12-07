@@ -49,7 +49,7 @@ const penjualan = sq.define('penjualan',{
         type:DataTypes.FLOAT,
         defaultValue: 0              //2 angka di belakang koma
     },
-    harga_total_bmhp:{
+    harga_total_operasi:{
         type:DataTypes.FLOAT,
         defaultValue: 0              //2 angka di belakang koma - untuk BMHP operasi
     },

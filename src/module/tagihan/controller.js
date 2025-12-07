@@ -399,20 +399,20 @@ class Controller {
             join penjualan p2 on p2.id = pp.penjualan_id 
             where pp."deletedAt" isnull and p2.registrasi_id = '${registrasi_id}'
             order by p2.kode_penjualan,p.nama_penunjang`,s);
-            let bmhp = await sq.query(`select pb.id as penjualan_bmhp_id, pb.*,
-            ob.ms_barang_id, ob.hasil_operasi_id,
-            mb.nama_barang, mb.kode_produk, 
-            msb.nama_satuan,
+            
+            let operasi = await sq.query(`select po.id as penjualan_operasi_id, po.*,
+            mb.nama_barang, mb.kode_produk, mb.qjb, mb.harga_pokok, mb.harga_tertinggi, mb.harga_beli_terahir,
+            mb.ms_jenis_obat_id, mjo.nama_jenis_obat, mb.komposisi, mb.ms_satuan_jual_id, msb.nama_satuan,
             p.kode_penjualan
-            from penjualan_bmhp pb 
-            join penjualan p on p.id = pb.penjualan_id
-            join operasi_bmhp ob on ob.id = pb.operasi_bmhp_id
-            join ms_barang mb on mb.id = ob.ms_barang_id
-            left join ms_satuan_barang msb on msb.id = ob.ms_satuan_barang_id
-            where pb."deletedAt" isnull and p.registrasi_id = '${registrasi_id}' 
+            from penjualan_operasi po 
+            join penjualan p on p.id = po.penjualan_id
+            join ms_barang mb on mb.id = po.ms_barang_id
+            join ms_jenis_obat mjo on mjo.id = mb.ms_jenis_obat_id
+            join ms_satuan_barang msb on msb.id = mb.ms_satuan_barang_id
+            where po."deletedAt" isnull and p.registrasi_id = '${registrasi_id}' 
             order by p.kode_penjualan, mb.nama_barang`,s);
 
-            res.status(200).json({ status: 200, message: "sukses", data:[{barang:barang,fasilitas:fasilitas,jasa:jasa,penunjang:penunjang,bmhp:bmhp}] });            
+            res.status(200).json({ status: 200, message: "sukses", data:[{barang:barang,fasilitas:fasilitas,jasa:jasa,penunjang:penunjang,operasi:operasi}] });            
         } catch (err) {
             console.log(err);
             res.status(500).json({ status: 500, message: "gagal", data: err });
