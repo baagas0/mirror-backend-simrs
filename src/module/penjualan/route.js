@@ -13,6 +13,6 @@ router.post('/listPenjualanByTagihanId', authentification,Controller.listPenjual
 router.post('/detailsById', authentification,Controller.detailsById)
 router.post('/delete',authentification,Controller.delete)
 
-router.post('/listPenjualanBmhp',authentification,Controller.listPenjualanBmhp)
+// router.post('/listPenjualanBmhp',authentification,Controller.listPenjualanBmhp)
 
 module.exports = router

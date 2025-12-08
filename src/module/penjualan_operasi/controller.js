@@ -11,7 +11,7 @@ const {kurangiStock,kembaliStock,updateStock} = require('../../helper/stock_bara
 class Controller {
 
     static async register(req, res) {
-        const {qty, harga_satuan, harga_satuan_custom, harga_pokok, keterangan, status_penjualan_operasi, penjualan_id, ms_barang_id, jenis, harga_total_operasi, discount, tax, total_penjualan, ms_gudang_id} = req.body;
+        const {qty_barang: qty, harga_barang: harga_satuan, harga_barang_custom: harga_satuan_custom, harga_pokok, keterangan, status_penjualan_operasi, penjualan_id, ms_barang_id, jenis, harga_total_operasi, discount, tax, total_penjualan, ms_gudang_id} = req.body;
         
         try {
             let cekPenjualan = await penjualan.findAll({where:{id:penjualan_id}})
@@ -62,7 +62,7 @@ class Controller {
     }
 
     static async update(req, res) {
-        const { id, qty, harga_satuan, harga_satuan_custom, harga_pokok, keterangan, status_penjualan_operasi, penjualan_id, ms_barang_id, harga_total_operasi, discount, tax, total_penjualan, jenis } = req.body;
+        const { id, qty_barang: qty, harga_barang: harga_satuan, harga_barang_custom: harga_satuan_custom, harga_pokok, keterangan, status_penjualan_operasi, penjualan_id, ms_barang_id, harga_total_operasi, discount, tax, total_penjualan, jenis } = req.body;
 
         try {
             let dataOperasi = await sq.query(`select po.*,p.ms_gudang_id from penjualan_operasi po join penjualan p on p.id = po.penjualan_id where po."deletedAt" isnull and po.id = '${id}'`,s);
