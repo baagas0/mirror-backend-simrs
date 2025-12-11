@@ -32,7 +32,7 @@ class Controller {
 
     static async registerBulk(req, res) {
         const { tgl_penjualan, is_bmhp, remark,is_external, jenis_rawat, NIK, nama, harga_total_barang, harga_total_jasa, harga_total_fasilitas, discount, tax, total_penjualan, status_penjualan, registrasi_id, kelas_kunjungan_id, ms_asuransi_id, ms_gudang_id, ms_dokter_id, ms_jenis_layanan_id, nama_penjualan_external,alamat_penjualan_external,keterangan_penjualan_external,pasien_id } = req.body;
-        let { bulk_fasilitas, bulk_jasa, bulk_barang, bulk_penunjang } = req.body
+        let { bulk_fasilitas, bulk_jasa, bulk_barang, bulk_penunjang, bulk_operasi } = req.body
         
         try {
             let cekTagihan = await cekTagihanByRegistrasiId({registrasi_id})
@@ -49,7 +49,7 @@ class Controller {
                 if (!bulk_fasilitas || !bulk_fasilitas.length) bulk_fasilitas = []
                 if (!bulk_barang || !bulk_barang.length) bulk_barang = []
                 if (!bulk_penunjang || !bulk_penunjang.length) bulk_penunjang = []
-
+                if (!bulk_operasi || !bulk_operasi.length) bulk_operasi = []
                 for (let i = 0; i < bulk_jasa.length; i++) {
                     bulk_jasa[i].id = uuid_v4()
                     bulk_jasa[i].penjualan_id = penjualan_id
@@ -67,7 +67,10 @@ class Controller {
                     bulk_penunjang[i].id = uuid_v4()
                     bulk_penunjang[i].penjualan_id = penjualan_id
                 }
-    
+                for (let i = 0; i < bulk_operasi.length; i++) {
+                    bulk_operasi[i].id = uuid_v4()
+                    bulk_operasi[i].penjualan_id = penjualan_id
+                }
                 if(bulk_barang.length>0){
                     let barang = await kurangiStock({ms_gudang_id,bulk_barang,isi:isi.substring(1)})
                     if(barang.cekHasil.length>0){
@@ -92,6 +95,19 @@ class Controller {
                         await penjualanPenunjang.bulkCreate(bulk_penunjang, { transaction: t })
                         await penjualanJasa.bulkCreate(bulk_jasa, { transaction: t })
                         await penjualanBarang.bulkCreate(bulk_barang, { transaction: t })
+                        await penjualanOperasi.bulkCreate(bulk_operasi.map((x) => ({
+                            ...x,
+                            id: x.id,
+                            qty:x.qty_barang,
+                            harga_satuan:x.harga_barang,
+                            harga_satuan_custom:x.harga_barang_custom,
+                            harga_pokok:x.harga_pokok_barang,
+                            jenis: "BMHP",
+                            keterangan:x.keterangan_penjualan_operasi,
+                            status_penjualan_operasi:x.status_penjualan_operasi,
+                            penjualan_id: penjualan_id,
+                            
+                        })), { transaction: t })
                         await stockBarang.bulkCreate(stock,{updateOnDuplicate:['qty'],transaction:t})
                         await historyInv.bulkCreate(hisInv,{transaction:t})
     

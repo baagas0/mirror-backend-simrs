@@ -161,7 +161,7 @@ class Controller {
 
         try {
             let operasiBmhpData = await sq.query(`
-                select ob.*, ho.jadwal_operasi_id, jo.registrasi_id, jo.ms_gudang_id
+                select ob.*, ho.jadwal_operasi_id, jo.registrasi_id
                 from operasi_bmhp ob
                 join hasil_operasi ho on ho.id = ob.hasil_operasi_id
                 join jadwal_operasi jo on jo.id = ho.jadwal_operasi_id
@@ -197,7 +197,8 @@ class Controller {
                 `, { ...s, transaction: t });
 
                 let penjualanId;
-                let ms_gudang_id = operasiBmhpData[0].ms_gudang_id;
+                // let ms_gudang_id = operasiBmhpData[0].ms_gudang_id;
+                let ms_gudang_id = 'e683d85d-42d4-469d-9f6a-c0d12065462c'; // GUDANG BMHP
                 
                 if (existingPenjualan.length > 0) {
                     penjualanId = existingPenjualan[0].id;
