@@ -49,3 +49,4 @@ msBarang.hasMany(penjualanOperasi, { foreignKey: 'ms_barang_id' });
 
 module.exports = penjualanOperasi
 
+

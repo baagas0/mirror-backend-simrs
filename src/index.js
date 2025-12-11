@@ -171,6 +171,7 @@ router.use("/assesment_tambahan_rnap", require("./module/assesment_tambahan_rnap
 router.use("/upload", require("./module/upload/route"));
 
 router.use("/dashboard", require("./module/dashboard/route"));
+router.use("/stats", require("./module/dashboard_executive/route"));
 
 router.use("/ihs", require("./module/ihs/route"));
 router.use("/satu_sehat", require('./module/satu_sehat/route'));
