@@ -63,4 +63,22 @@ router.get('/doctors-oncall', authentification, Controller.getDoctorsOnCall);
 // API 15: Utilisasi ruang operasi
 router.get('/operation-room-utilization', authentification, Controller.getOperationRoomUtilization);
 
+// ========================================
+// Pharmacy & Logistics APIs
+// ========================================
+
+// API 16: Stok kritis
+router.get('/critical-stock', authentification, Controller.getCriticalStock);
+
+// API 17: Nilai stok gudang & kadaluarsa
+router.get('/stock-value', authentification, Controller.getStockValue);
+
+// API 18: Top 10 obat
+router.get('/top-medicines', authentification, Controller.getTopMedicines);
+
+// API 19: Pergerakan stok barang
+router.get('/stock-movement', authentification, Controller.getStockMovement);
+
 module.exports = router;
+
+

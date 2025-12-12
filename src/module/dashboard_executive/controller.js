@@ -1214,6 +1214,323 @@ class Controller {
         }
     }
 
+    /**
+     * API 16: GET /pharmacy/critical-stock
+     * Stok obat kritis yang perlu restock
+     */
+    static async getCriticalStock(req, res) {
+        const { threshold = 10 } = req.query;
+
+        try {
+            const minThreshold = parseInt(threshold) || 10;
+
+            const query = `
+                SELECT 
+                    mb.nama_barang,
+                    mb.type,
+                    SUM(s.qty)::numeric as total_stock,
+                    mg.nama_gudang,
+                    msb.nama_satuan_barang as unit,
+                    ${minThreshold} as threshold
+                FROM stock s
+                JOIN ms_barang mb ON mb.id = s.ms_barang_id
+                JOIN ms_gudang mg ON mg.id = s.ms_gudang_id
+                LEFT JOIN ms_satuan_barang msb ON msb.id = mb.ms_satuan_barang_id
+                WHERE s."deletedAt" IS NULL
+                AND mb."deletedAt" IS NULL
+                AND mg."deletedAt" IS NULL
+                GROUP BY mb.id, mb.nama_barang, mb.type, mg.nama_gudang, mg.id, msb.nama_satuan_barang
+                HAVING SUM(s.qty) <= ${minThreshold}
+                ORDER BY SUM(s.qty) ASC
+                LIMIT 50
+            `;
+
+            const result = await sq.query(query, s);
+
+            res.status(200).json({
+                success: true,
+                threshold: minThreshold,
+                critical_items_count: result.length,
+                critical_stock: result,
+                generated_at: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({
+                success: false,
+                message: "Internal server error",
+                code: 500
+            });
+        }
+    }
+
+    /**
+     * API 17: GET /pharmacy/stock-value
+     * Nilai total stok gudang dan potensi kadaluarsa
+     */
+    static async getStockValue(req, res) {
+        try {
+            const today = moment().format('YYYY-MM-DD');
+            const thirtyDaysLater = moment().add(30, 'days').format('YYYY-MM-DD');
+
+            // Query untuk total stock value
+            const stockValueQuery = `
+                SELECT 
+                    mg.nama_gudang,
+                    COUNT(DISTINCT mb.id)::int as total_items,
+                    SUM(s.qty)::numeric as total_qty,
+                    SUM(s.qty * mb.harga_pokok)::numeric as total_value
+                FROM stock s
+                JOIN ms_barang mb ON mb.id = s.ms_barang_id
+                JOIN ms_gudang mg ON mg.id = s.ms_gudang_id
+                WHERE s."deletedAt" IS NULL
+                AND mb."deletedAt" IS NULL
+                AND mg."deletedAt" IS NULL
+                AND s.qty > 0
+                GROUP BY mg.id, mg.nama_gudang
+                ORDER BY total_value DESC
+            `;
+
+            const stockValueResult = await sq.query(stockValueQuery, s);
+
+            // Query untuk expired items
+            const expiredQuery = `
+                SELECT 
+                    mb.nama_barang,
+                    mg.nama_gudang,
+                    s.qty::numeric,
+                    s.tgl_kadaluarsa,
+                    (s.qty * mb.harga_pokok)::numeric as potential_loss,
+                    CASE 
+                        WHEN DATE(s.tgl_kadaluarsa) <= '${today}' THEN 'expired'
+                        WHEN DATE(s.tgl_kadaluarsa) <= '${thirtyDaysLater}' THEN 'near_expiry'
+                        ELSE 'safe'
+                    END as status
+                FROM stock s
+                JOIN ms_barang mb ON mb.id = s.ms_barang_id
+                JOIN ms_gudang mg ON mg.id = s.ms_gudang_id
+                WHERE s."deletedAt" IS NULL
+                AND mb."deletedAt" IS NULL
+                AND mg."deletedAt" IS NULL
+                AND s.tgl_kadaluarsa IS NOT NULL
+                AND DATE(s.tgl_kadaluarsa) <= '${thirtyDaysLater}'
+                AND s.qty > 0
+                ORDER BY s.tgl_kadaluarsa ASC
+                LIMIT 50
+            `;
+
+            const expiredResult = await sq.query(expiredQuery, s);
+
+            // Calculate totals
+            const totalStockValue = stockValueResult.reduce((sum, item) => 
+                sum + parseFloat(item.total_value || 0), 0
+            );
+
+            const totalPotentialLoss = expiredResult.reduce((sum, item) => 
+                sum + parseFloat(item.potential_loss || 0), 0
+            );
+
+            res.status(200).json({
+                success: true,
+                stock_by_warehouse: stockValueResult.map(item => ({
+                    warehouse: item.nama_gudang,
+                    total_items: item.total_items,
+                    total_qty: parseFloat(item.total_qty || 0),
+                    total_value: parseFloat(item.total_value || 0)
+                })),
+                total_stock_value: totalStockValue,
+                expiry_warning: {
+                    items_count: expiredResult.length,
+                    potential_loss: totalPotentialLoss,
+                    items: expiredResult.map(item => ({
+                        item: item.nama_barang,
+                        warehouse: item.nama_gudang,
+                        qty: parseFloat(item.qty || 0),
+                        expiry_date: item.tgl_kadaluarsa,
+                        potential_loss: parseFloat(item.potential_loss || 0),
+                        status: item.status
+                    }))
+                },
+                generated_at: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({
+                success: false,
+                message: "Internal server error",
+                code: 500
+            });
+        }
+    }
+
+    /**
+     * API 18: GET /pharmacy/top-medicines
+     * Top 10 obat yang paling banyak digunakan
+     */
+    static async getTopMedicines(req, res) {
+        const { days = 30 } = req.query;
+
+        try {
+            const daysCount = parseInt(days) || 30;
+            const startDate = moment().subtract(daysCount - 1, 'days').format('YYYY-MM-DD');
+            const endDate = moment().format('YYYY-MM-DD');
+
+            const query = `
+                SELECT 
+                    mb.nama_barang as medicine,
+                    mb.type,
+                    SUM(pb.qty_barang)::int as total_qty,
+                    COUNT(DISTINCT p.registrasi_id)::int as total_patients,
+                    msb.nama_satuan_barang as unit
+                FROM penjualan_barang pb
+                JOIN penjualan p ON p.id = pb.penjualan_id
+                JOIN ms_barang mb ON mb.id = pb.ms_barang_id
+                LEFT JOIN ms_satuan_barang msb ON msb.id = mb.ms_satuan_barang_id
+                WHERE pb."deletedAt" IS NULL
+                AND p."deletedAt" IS NULL
+                AND mb."deletedAt" IS NULL
+                AND DATE(p.tgl_penjualan) BETWEEN '${startDate}' AND '${endDate}'
+                AND p.status_penjualan IN (2, 3)
+                AND mb.type = 'OBAT'
+                GROUP BY mb.id, mb.nama_barang, mb.type, msb.nama_satuan_barang
+                ORDER BY SUM(pb.qty_barang) DESC
+                LIMIT 10
+            `;
+
+            const result = await sq.query(query, s);
+
+            res.status(200).json({
+                success: true,
+                period_days: daysCount,
+                start_date: startDate,
+                end_date: endDate,
+                top_medicines: result,
+                generated_at: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({
+                success: false,
+                message: "Internal server error",
+                code: 500
+            });
+        }
+    }
+
+    /**
+     * API 19: GET /pharmacy/stock-movement
+     * Monitoring pergerakan barang masuk/keluar
+     */
+    static async getStockMovement(req, res) {
+        const { range = 'monthly' } = req.query;
+
+        try {
+            if (!['daily', 'weekly', 'monthly'].includes(range)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid range parameter. Must be: daily, weekly, or monthly",
+                    code: 400
+                });
+            }
+
+            let startDate, endDate;
+            if (range === 'daily') {
+                startDate = moment().subtract(6, 'days').format('YYYY-MM-DD');
+                endDate = moment().format('YYYY-MM-DD');
+            } else if (range === 'weekly') {
+                startDate = moment().subtract(3, 'weeks').startOf('week').format('YYYY-MM-DD');
+                endDate = moment().endOf('week').format('YYYY-MM-DD');
+            } else {
+                startDate = moment().subtract(5, 'months').startOf('month').format('YYYY-MM-DD');
+                endDate = moment().endOf('month').format('YYYY-MM-DD');
+            }
+
+            // Query untuk stock in (pembelian)
+            const stockInQuery = `
+                SELECT 
+                    TO_CHAR(DATE(s.tgl_masuk), 'YYYY-MM-DD') as date,
+                    COUNT(DISTINCT s.id)::int as items_count,
+                    SUM(s.qty)::numeric as total_qty_in
+                FROM stock s
+                WHERE s."deletedAt" IS NULL
+                AND DATE(s.tgl_masuk) BETWEEN '${startDate}' AND '${endDate}'
+                GROUP BY DATE(s.tgl_masuk)
+                ORDER BY DATE(s.tgl_masuk)
+            `;
+
+            // Query untuk stock out (penjualan)
+            const stockOutQuery = `
+                SELECT 
+                    TO_CHAR(DATE(p.tgl_penjualan), 'YYYY-MM-DD') as date,
+                    COUNT(DISTINCT pb.id)::int as items_count,
+                    SUM(pb.qty_barang)::numeric as total_qty_out
+                FROM penjualan_barang pb
+                JOIN penjualan p ON p.id = pb.penjualan_id
+                WHERE pb."deletedAt" IS NULL
+                AND p."deletedAt" IS NULL
+                AND DATE(p.tgl_penjualan) BETWEEN '${startDate}' AND '${endDate}'
+                AND p.status_penjualan IN (2, 3)
+                GROUP BY DATE(p.tgl_penjualan)
+                ORDER BY DATE(p.tgl_penjualan)
+            `;
+
+            const stockInResult = await sq.query(stockInQuery, s);
+            const stockOutResult = await sq.query(stockOutQuery, s);
+
+            // Merge data
+            const movementMap = {};
+            
+            stockInResult.forEach(item => {
+                if (!movementMap[item.date]) {
+                    movementMap[item.date] = { date: item.date, in: 0, out: 0, in_items: 0, out_items: 0 };
+                }
+                movementMap[item.date].in = parseFloat(item.total_qty_in || 0);
+                movementMap[item.date].in_items = item.items_count;
+            });
+
+            stockOutResult.forEach(item => {
+                if (!movementMap[item.date]) {
+                    movementMap[item.date] = { date: item.date, in: 0, out: 0, in_items: 0, out_items: 0 };
+                }
+                movementMap[item.date].out = parseFloat(item.total_qty_out || 0);
+                movementMap[item.date].out_items = item.items_count;
+            });
+
+            const movement = Object.values(movementMap).sort((a, b) => 
+                a.date.localeCompare(b.date)
+            );
+
+            // Calculate totals
+            const totalIn = movement.reduce((sum, item) => sum + item.in, 0);
+            const totalOut = movement.reduce((sum, item) => sum + item.out, 0);
+
+            res.status(200).json({
+                success: true,
+                range: range,
+                start_date: startDate,
+                end_date: endDate,
+                summary: {
+                    total_in: totalIn,
+                    total_out: totalOut,
+                    net_movement: totalIn - totalOut
+                },
+                movement: movement,
+                generated_at: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({
+                success: false,
+                message: "Internal server error",
+                code: 500
+            });
+        }
+    }
+
 }
 
 module.exports = Controller;
