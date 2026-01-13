@@ -189,5 +189,6 @@ router.use("/lab_pengambilan_sampel", require('./module/lab_pengambilan_sampel/r
 router.use("/lab_laporan", require('./module/lab_laporan/route'));
 
 router.use("/inacbg", require('./module/inacbg/route'));
+router.use("/satu-sehats", require('./module/satu_sehats/route'));
 
 module.exports = router;

@@ -82,3 +82,7 @@ router.get('/stock-movement', authentification, Controller.getStockMovement);
 module.exports = router;
 
 
+
+
+
+
